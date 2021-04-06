@@ -8,7 +8,9 @@ from scoreboard import Scoreboard
 from button import Button
 from ship import Ship
 from bullet import Bullet
+from fire_bullet import FireBullet
 from alien import Alien
+from extraLife_alien import ExtraLifeAlien
 
 
 class AlienInvasion:
@@ -33,7 +35,9 @@ class AlienInvasion:
 
         self.ship = Ship(self)
         self.bullets = pygame.sprite.Group()
+        self.fire_bullets = pygame.sprite.Group()
         self.aliens = pygame.sprite.Group()
+        self.extra_aliens = pygame.sprite.Group()
 
         self._create_fleet()
 
@@ -83,6 +87,8 @@ class AlienInvasion:
             sys.exit()
         elif event.key == pygame.K_SPACE:
             self._fire_bullet()
+        elif event.key == pygame.K_v:
+            self._fire_fire_bullet()
         '''elif event.key == pygame.K_p:
            self._check_play_button(True)'''
 
@@ -112,6 +118,7 @@ class AlienInvasion:
             # get rid of any remaining aliens and bullets.
             self.aliens.empty()
             self.bullets.empty()
+            self.fire_bullets.empty()
 
             # Create a new fleet and center the ship.
             self._create_fleet()
@@ -126,15 +133,29 @@ class AlienInvasion:
             new_bullet = Bullet(self)
             self.bullets.add(new_bullet)
 
+    def _fire_fire_bullet(self):
+        """Create a new fire bullet and add it to the bullets group"""
+        if len(self.fire_bullets) < self.settings.fire_bullets_allowed:
+            new_fire_bullet = FireBullet(self)
+            self.fire_bullets.add(new_fire_bullet)
+
     def _update_bullets(self):
         """Update position of bullets and get rid of old bullets."""
         # Update bullet positions.
         self.bullets.update()
+        self.fire_bullets.update()
+
         # Get rid of bullets that have disappeared.
         for bullet in self.bullets.copy():
             if bullet.rect.bottom <= 0:
                 self.bullets.remove(bullet)
+
+        # Get rid of fire bullets that have disappeared.
+        for fire_bullet in self.fire_bullets.copy():
+            if fire_bullet.rect.bottom <= 0:
+                self.fire_bullets.remove(fire_bullet)
         # print(len(self.bullets))
+        # print(len(self.fire_bullets))
 
         self._check_bullet_alien_collisions()
 
@@ -145,6 +166,13 @@ class AlienInvasion:
         #   If so, get rid of the bullet and the alien.
         collisions = pygame.sprite.groupcollide(
             self.bullets, self.aliens, True, True)
+        pygame.sprite.groupcollide(self.fire_bullets, self.aliens, True, False)
+        pygame.sprite.groupcollide(self.bullets, self.extra_aliens, True, False)
+        extra_life_collision = pygame.sprite.groupcollide(self.fire_bullets, self.extra_aliens, True, True)
+
+        if extra_life_collision:
+            self.stats.ships_left += 1
+            self.sb.prep_ships()
 
         if collisions:
             for aliens in collisions.values():
@@ -155,6 +183,7 @@ class AlienInvasion:
         if not self.aliens:
             # Destroy existing bullets and create new fleet.
             self.bullets.empty()
+            self.extra_aliens.empty()
             self._create_fleet()
             self.settings.increase_speed()
 
@@ -167,6 +196,8 @@ class AlienInvasion:
             then update the positions of all aliens in the fleet."""
         self._check_fleet_edges()
         self.aliens.update()
+        self._check_extra_alien_edges()
+        self.extra_aliens.update()
 
         # Look for alien-ship collisions.
         if pygame.sprite.spritecollideany(self.ship, self.aliens):
@@ -184,6 +215,7 @@ class AlienInvasion:
 
             # Get rid of any remaining aliens and bullets.
             self.aliens.empty()
+            self.extra_aliens.empty()
             self.bullets.empty()
 
             # Create a new fleet and center the ship.
@@ -218,12 +250,18 @@ class AlienInvasion:
         ship_height = self.ship.rect.height
         available_space_y = (self.settings.screen_height -
                              (3 * alien_height) - ship_height)
-        number_rows = available_space_y // (2 * alien_height)
+        number_rows = available_space_y // (2 * alien_height) - 1
 
         # Create the full fleet of aliens
         for row_number in range(number_rows):
             for alien_number in range(number_aliens_x):
                 self._create_alien(alien_number, row_number)
+
+        extra_alien = ExtraLifeAlien(self)
+        extra_alien.x = 650
+        extra_alien.rect.x = extra_alien.x
+        extra_alien.y = 95
+        self.extra_aliens.add(extra_alien)
 
     def _create_alien(self, alien_number, row_number):
         """Create an alien and place it in the row."""
@@ -232,7 +270,7 @@ class AlienInvasion:
         alien_width, alien_height = alien.rect.size
         alien.x = alien_width + 2 * alien_width * alien_number
         alien.rect.x = alien.x
-        alien.rect.y = alien.rect.height + 2 * alien.rect.height * row_number
+        alien.rect.y = 3 * alien.rect.height + 2 * alien.rect.height * row_number
         self.aliens.add(alien)
 
     def _check_fleet_edges(self):
@@ -240,6 +278,13 @@ class AlienInvasion:
         for alien in self.aliens.sprites():
             if alien.check_edges():
                 self._change_fleet_direction()
+                break
+
+    def _check_extra_alien_edges(self):
+        """Respond appropriately if any aliens have reached an edge."""
+        for alien in self.extra_aliens.sprites():
+            if alien.check_edges():
+                self.settings.extra_alien_direction *= -1
                 break
 
     def _change_fleet_direction(self):
@@ -255,7 +300,10 @@ class AlienInvasion:
         self.ship.blitme()
         for bullet in self.bullets.sprites():
             bullet.draw_bullet()
+        for fire_bullet in self.fire_bullets.sprites():
+            fire_bullet.draw_bullet()
         self.aliens.draw(self.screen)
+        self.extra_aliens.draw(self.screen)
 
         # Draw the score information.
         self.sb.show_score()
